@@ -36,9 +36,20 @@ file_type = st.radio(
 )
 
 if file_type == "ملف نصي (TXT)":
-  separator = st.text_input(
-      "فاصل الفقرات في الملف:", value="-------", key="txt_sep"
+  # خيارات تقسيم النص الذكية
+  split_method = st.selectbox(
+      "طريقة تقسيم النص في الملف:",
+      (
+          "حسب الأسطر الفارغة تلقائياً (Paragraphs / \\n\\n)",
+          "باستخدام فاصل مخصص (Custom Separator)",
+      ),
   )
+
+  if split_method == "باستخدام فاصل مخصص (Custom Separator)":
+    separator = st.text_input("أدخل الفاصل المستخدم:", value="-------")
+  else:
+    separator = "\n\n"
+
   uploaded_file = st.file_uploader("اختر ملف TXT", type=["txt"])
 
   if uploaded_file is not None:
@@ -47,9 +58,11 @@ if file_type == "ملف نصي (TXT)":
     st.text_area("المحتوى:", input_text, height=120, disabled=True)
 
     if st.button("🚀 بدء المعالجة", type="primary"):
-      paragraphs = [
-          p.strip() for p in input_text.split(separator) if p.strip()
-      ]
+      if split_method == "باستخدام فاصل مخصص (Custom Separator)":
+        paragraphs = [p.strip() for p in input_text.split(separator) if p.strip()]
+      else:
+        paragraphs = [p.strip() for p in input_text.split("\n\n") if p.strip()]
+
       processed_results = []
       progress_bar = st.progress(0)
       status_text = st.empty()
@@ -75,7 +88,11 @@ if file_type == "ملف نصي (TXT)":
         progress_bar.progress(i / len(paragraphs))
 
       status_text.text("اكتملت المعالجة بنجاح! 🎉")
-      final_output = f"\n{separator}\n".join(processed_results)
+
+      if split_method == "باستخدام فاصل مخصص (Custom Separator)":
+        final_output = f"\n{separator}\n".join(processed_results)
+      else:
+        final_output = "\n\n".join(processed_results)
 
       st.subheader("✨ النتائج المعالجة:")
       st.text_area("النتيجة النهائية:", final_output, height=200)
@@ -103,11 +120,10 @@ else:  # ملف CSV
       processed_column = []
       progress_bar = st.progress(0)
       status_text = st.empty()
-
       for i, text_val in enumerate(df[text_column]):
         status_text.text(f"جاري معالجة الصف {i+1} من {len(df)}...")
         prompt = f"""
-                أنت مساعد ذكي لتحليل وت-نظيف البيانات. لديك هذا النص من عمود جدول:
+                أنت مساعد ذكي لتحليل وتنظيف البيانات. لديك هذا النص من عمود جدول:
                 "{str(text_val)}"
                 
                 التعليمات المطلوبة:
@@ -117,7 +133,7 @@ else:  # ملف CSV
                 """
         try:
           response = ollama.chat(
-[10/13/2026 9:40 PM] Ayat Zain: model=model_name, messages=[{"role": "user", "content": prompt}]
+              model=model_name, messages=[{"role": "user", "content": prompt}]
           )
           processed_column.append(response["message"]["content"])
         except Exception as e:
@@ -126,13 +142,11 @@ else:  # ملف CSV
 
       status_text.text("اكتملت معالجة الجدول بنجاح! 🎉")
 
-      # إضافة العمود الجديد إلى DataFrame
       df["AI_Processed_Result"] = processed_column
 
       st.subheader("✨ جدول البيانات بعد المعالجة:")
       st.dataframe(df.head())
 
-      # تحويل الجدول إلى CSV للتحميل
       csv_buffer = df.to_csv(index=False).encode("utf-8")
       st.download_button(
           "📥 تحميل جدول البيانات المعدل (CSV)",
