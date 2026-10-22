@@ -2,65 +2,75 @@ import streamlit as st
 import pandas as pd
 import requests
 
-st.title("📊 أداة معالجة جداول البيانات بالذكاء الاصطناعي")
+st.title("🤖 نظام الوكيل الذكي (AI Agent) لتنظيف وتحليل البيانات")
 
-# إعدادات بسيطة في الواجهة
-server_url = "http://127.0.0.1:8000/process-row"
-model_name = st.sidebar.selectbox("اختر النموذج:", ["llama3.2", "mistral", "gemma"])
-text_column = st.sidebar.text_input("اسم العمود المستهدف:", value="Text")
-custom_instruction = st.text_area("التعليمات المخصصة للمُعالجة:", "قم بتلخيص النص واستخراج الكلمات المفتاحية.")
+server_url = "http://127.0.0.1:8000/agent-process"
 
 # رفع الملف
-uploaded_file = st.file_uploader("قم برفع ملف CSV:", type=["csv"])
+uploaded_file = st.file_uploader("قم برفع ملف الـ CSV الخاص بك:", type=["csv"])
 
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
+    st.subheader("📋 معاينة البيانات الأصلية:")
     st.dataframe(df.head())
 
-    if st.button("🚀 بدء معالجة بيانات الجدول", type="primary"):
-        if text_column not in df.columns:
-            st.error(f"العمود '{text_column}' غير موجود في الملف!")
-        else:
-            processed_column = []
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            total_rows = len(df)
+    st.sidebar.header("🛠️ إعدادات الوكيل الذكي (Agent Config)")
+    
+    # تفاعل الوكيل الذكي مع المستخدم
+    use_rag = st.sidebar.checkbox("🤖 هل تريد استخدام قواعد التنظيف المخزنة في نظام الـ RAG؟")
+    
+    rag_topic = "customer_support"
+    custom_instruction = ""
+    
+    if use_rag:
+        rag_topic = st.sidebar.selectbox("اختر نوع القواعد من الـ RAG:", ["customer_support", "financial"])
+        st.sidebar.info(f"سيتم سحب القواعد تلقائياً من نظام الـ RAG الخاص بـ: {rag_topic}")
+    else:
+        custom_instruction = st.sidebar.text_area("أدخل تعليمات التنظيف الخاصة بك:", "قم بتصحيح الأخطاء وإزالة الفراغات الزائدة.")
 
-            for i, text_val in enumerate(df[text_column]):
-                status_text.text(f"جاري معالجة الصف {i + 1} من {total_rows}...")
-                
-                # تجهيز البيانات للتواصل مع السيرفر
-                payload = {
-                    "text_value": str(text_val),
-                    "custom_instruction": custom_instruction,
-                    "model_name": model_name
-                }
-                
-                try:
-                    # إرسال طلب POST إلى السيرفر
-                    res = requests.post(server_url, json=payload)
-                    if res.status_code == 200:
-                        processed_column.append(res.json()["result"])
-                    else:
-                        processed_column.append(f"Error: Server responded with status {res.status_code}")
-                except Exception as e:
-                    processed_column.append(f"Connection Error: {e}")
-                
-                # تحديث شريط التقدم
-                progress_bar.progress((i + 1) / total_rows)
+    text_column = st.sidebar.selectbox("اختر العمود النصي للمعالجة الذكية:", df.columns)
 
-            status_text.text("اكتملت معالجة الجدول بنجاح! 🎉")
+    # --- خيارات أداة Pandas المتقدمة ---
+    st.sidebar.subheader("⚙️ خوات أداة Pandas الهيكلية")
+    handle_nulls = st.sidebar.checkbox("معالجة القيم الفارغة (Missing Values)")
+    null_strategy = "fill"
+    if handle_nulls:
+        null_strategy = st.sidebar.selectbox("طريقة المعالجة:", ["ملء بقيمة محددة (Unknown)", "حذف الصفوف الفارغة (Drop)"])
 
-            # إضافة النتائج وجدول البيانات
-            df["AI_Processed_Result"] = processed_column
-            st.subheader("✨ جدول البيانات بعد المعالجة:")
-            st.dataframe(df.head())
+    if st.button("🚀 تشغيل الوكيل الذكي لتنفيذ المعالجة", type="primary"):
+        with st.spinner("الوكيل الذكي يقوم بتنسيق الأدوات وتطبيق التنظيف..."):
+            
+            # 1. تطبيق أدوات Pandas أولاً (بايثون الصرفة)
+            if handle_nulls:
+                if null_strategy == "حذف الصفوف الفارغة (Drop)":
+                    df = df.dropna(subset=[text_column])
+                else:
+                    df[text_column] = df[text_column].fillna("Unknown")
 
-            # تحميل الملف المعدل
-            csv_buffer = df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "📥 تحميل جدول البيانات المعدل (CSV)",
-                csv_buffer,
-                file_name="processed_dataset.csv",
-                mime="text/csv",
-            )
+            # 2. إرسال النصوص للسيرفر لاستخدام نموذج الذكاء الاصطناعي و الـ RAG
+            payload = {
+                "use_rag": use_rag,
+                "rag_topic": rag_topic,
+                "custom_instruction": custom_instruction,
+                "text_values: df[text_column].astype(str).tolist()
+            }
+
+            try:
+                response = requests.post(server_url, json=payload)
+                if response.status_code == 200:
+                    res_data = response.json()
+                    df["AI_Agent_Cleaned"] = res_data["ai_processed_texts"]
+                    
+                    st.success("تمت المعالجة بنجاح عبر تكامل الأدوات (Pandas + RAG + Ollama)! 🎉")
+                    st.info(using القواعد التالية: {res_data['rag_instructions_used']})")
+                    
+                    st.subheader("✨ الجدول بعد التعديل:")
+                    st.dataframe(df.head())
+
+                    # زر التحميل
+                    csv_data = df.to_csv(index=False).encode("utf-8")
+                    st.download_button("📥 تحميل الجدول المحدث نهائياً", csv_data, "agent_processed_data.csv", "mime/csv")
+                else:
+                    st.error("حدث خطأ في الاتصال بالسيرفر.")
+            except Exception as e:
+                st.error(f"خطأ تقني: {e}")
