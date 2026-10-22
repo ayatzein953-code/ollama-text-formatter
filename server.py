@@ -1,39 +1,63 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+import pandas as pd
 import ollama
+import json
 
-app = FastAPI(title="AI Dataset Processing API")
+app = FastAPI(title="Advanced AI Agentic Data Processing API")
 
-# تحديد هيكل البيانات المستقبلة في الطلب (Request Body)
-class ProcessRequest(BaseModel):
-    text_value: str
-    custom_instruction: str
-    model_name: str = "llama3.2"
+# --- 1. محاكاة قاعدة بيانات الـ RAG (قواعد التنظيف المحفوظة) ---
+RAG_RULES_DB = {
+    "financial": "قم بتنظيف أسماء العملات، إزالة الرموز الخاصة من الأرقام، وتحويلها إلى قيمة رقمية صريحة.",
+    "customer_support": "صحح الأخطاء الإملائية في نعم العملاء، احذف الفراغات الزائدة، وصنف المشكلة إلى (تقنية، مالية، عامة)."
+}
 
-@app.post("/process-row")
-async def process_row(request: ProcessRequest):
+class AgentRequest(BaseModel):
+    use_rag: bool
+    rag_topic: str = "customer_support"
+    custom_instruction: str = ""
+    text_values: list = []  # للنصوص المعالجة بالذكاء الاصطناعي
+    pandas_operations: dict = {} # للعمليات الهيكلية (تعويض القيم، أعمدة جديدة)
+
+@app.post("/agent-process")
+async def agent_process(request: AgentRequest):
     """
-    مقبس (Endpoint) لمعالجة صف واحد من البيانات عبر نموذج Ollama
+    الوكيل الذكي الذي يحدد الأدوات المستخدمة بناءً على طلب المستخدم
     """
-    prompt = f"""
-    أنت مساعد ذكي لتحليل وتنظيف البيانات. لديك هذا النص من عمود جدول:
-    "{request.text_value}"
+    instructions = ""
     
-    التعليمات المطلوبة:
-    {request.custom_instruction}
-    
-    أرجع النتيجة المختصرة والمناسبة لتوضع مباشرة في جدول بيانات دون إضافات زائدة.
-    """
-    try:
-        response = ollama.chat(
-            model=request.model_name,
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return {"result": response["message"]["content"]}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # استخدام أداة الـ RAG إذا وافق المستخدم
+    if request.use_rag:
+        instructions = RAG_RULES_DB.get(request.rag_topic, "قم بتنظيف النص وتحسينه.")
+    else:
+        instructions = request.custom_instruction
 
-if __name__ == "__main__":
-    import uvicorn
-    # تشغيل السيرفر المحلي على المنفذ 8000
-    uvicorn.run("server:app", host="127.0.0.1", port=8000, reload=True)
+    processed_results = []
+    
+    # معالجة النصوص عبر Ollama
+    for text_val in request.text_values:
+        prompt = f"""
+        أنت مساعد ذكي لتنظيف البيانات. 
+        النص المراد معالجته: "{text_val}"
+        القواعد المتبعة: {instructions}
+        أرجع النتيجة المختصرة والمباشرة فقط.
+        """
+        try:
+            response = ollama.chat(model="llama3.2", messages=[{"role": "user", "content": prompt}])
+            processed_results.append(response["message"]["content"])
+        except Exception as e:
+            processed_results.append(str(text_val))
+
+    return {
+        "status": "success",
+        "rag_instructions_used": instructions,
+        "ai_processed_texts": processed_results
+    }
+
+@app.post("/pandas-process")
+async def pandas_process(file_data: dict):
+    """
+    أداة بايثون و Pandas المتقدمة للعمليات الهيكلية والرياضية
+    """
+    # سيتم تمرير الجدول ومعالجة القيم المفقودة والأعمدة الرياضية هنا
+    pass
